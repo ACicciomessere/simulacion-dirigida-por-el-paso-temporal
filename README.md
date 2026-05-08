@@ -9,5 +9,5 @@
 
 # Animate a specific run
 python3 visualizer/animate_particles.py \
-    --states output/system2/N300_k1000/seed42/states.txt \
+    --states output/system2/NXXX_k1000/seedXX/states.txt \
     --out anim.mp4
