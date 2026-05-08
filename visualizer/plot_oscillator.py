@@ -16,11 +16,11 @@ import matplotlib.pyplot as plt
 # ── defaults ─────────────────────────────────────────────────────────────────
 
 COLORS = {
-    "r_euler":      "#e74c3c",
+    "r_euler":      "#f9e90c",
     "r_verlet":     "#2ecc71",
     "r_beeman":     "#3498db",
     "r_gear":       "#9b59b6",
-    "r_analytical": "#2c3e50",
+    "r_analytical": "#e74c3c",
 }
 LABELS = {
     "r_euler":      "Euler",
@@ -50,10 +50,10 @@ def plot_trajectories(traj_path, out_dir):
 
     for ax, col in zip(axes, INTEGRATORS):
         ana_col = "r_analytical" if "r_analytical" in df.columns else "analytical"
-        ax.plot(t, df[ana_col], color=COLORS["r_analytical"],
-                lw=1.2, label="Analítica", zorder=3)
         ax.plot(t, df[col], color=COLORS[col],
-                lw=1.0, ls="--", label=LABELS[col], zorder=2)
+                lw=1.5, ls="--", label=LABELS[col], zorder=3)   # numérica adelante
+        ax.plot(t, df[ana_col], color=COLORS["r_analytical"],
+                lw=1.2, label="Analítica", zorder=2)             # analítica atrás
         ax.set_title(LABELS[col], fontsize=11)
         ax.set_xlabel("Tiempo (s)")
         ax.set_ylabel("Posición (m)")
@@ -67,9 +67,10 @@ def plot_trajectories(traj_path, out_dir):
     # combined in one axes
     fig2, ax2 = plt.subplots(figsize=(9, 5))
     ax2.plot(t, df["r_analytical"], color=COLORS["r_analytical"],
-             lw=2, label="Analítica", zorder=5)
+             lw=2, label="Analítica", zorder=2)                  # analítica atrás
     for col in INTEGRATORS:
-        ax2.plot(t, df[col], color=COLORS[col], lw=1.0, ls="--", label=LABELS[col])
+        ax2.plot(t, df[col], color=COLORS[col],
+                 lw=1.5, ls="--", label=LABELS[col], zorder=3)   # numéricas adelante
     ax2.set_xlabel("Tiempo (s)")
     ax2.set_ylabel("Posición (m)")
     ax2.set_title("Oscilador amortiguado – comparación de integradores")
@@ -77,6 +78,19 @@ def plot_trajectories(traj_path, out_dir):
     ax2.grid(True, alpha=0.3)
     savefig(fig2, os.path.join(out_dir, "trajectories_combined.png"))
 
+    # error vs analítica en un solo gráfico
+    ana_col = "r_analytical" if "r_analytical" in df.columns else "analytical"
+    fig3, ax3 = plt.subplots(figsize=(9, 5))
+    for col in INTEGRATORS:
+        error = np.abs(df[col].values - df[ana_col].values)
+        ax3.plot(t, error, color=COLORS[col], lw=1.2, label=LABELS[col])
+    ax3.set_xlabel("Tiempo (s)")
+    ax3.set_ylabel("Error absoluto |x_num − x_ana| (m)")
+    ax3.set_title("Error vs. Solución analítica") #más residuo q error, pero bueno
+    ax3.legend()
+    ax3.grid(True, alpha=0.3)
+    ax3.set_yscale("log")          # log por si los errores difieren en órdenes de magnitud
+    savefig(fig3, os.path.join(out_dir, "trajectories_error.png"))
 
 # ── 2. MSE vs dt (log-log) ────────────────────────────────────────────────────
 
