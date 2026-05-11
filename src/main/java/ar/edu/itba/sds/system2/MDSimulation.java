@@ -99,30 +99,93 @@ public class MDSimulation {
         return list;
     }
 
-    // ── Force computation (O(N^2) + boundary) ───────────────────────────────
+    // ── Force computation (Cell Index Method + boundary) ────────────────────
+    //
+    // The circular domain (radius R_DOMAIN) is embedded in a square bounding
+    // box of side L = 2·R_DOMAIN.  The interaction cutoff is rc = 2·R_PARTICLE
+    // (particles only interact when they overlap).  We choose the number of
+    // cells M so that each cell side >= rc, giving M = floor(L / rc).
+    // Because rc == cellSize exactly, only the immediately adjacent 3×3 block
+    // of cells needs to be checked (searchRange = 1).
+    // No periodic boundaries — the domain is a closed circular enclosure.
+
+    private static final double L_BOX      = 2.0 * R_DOMAIN;          // 80 m
+    private static final double RC         = 2.0 * R_PARTICLE;         //  2 m  (overlap threshold)
+    private static final int    M_CELLS    = (int) (L_BOX / RC);       // 40
+    private static final double CELL_SIZE  = L_BOX / M_CELLS;          // 2 m
+    private static final double OFFSET     = R_DOMAIN;                 // shift so x∈[0,L_BOX]
 
     private void computeForces() {
         int n = particles.size();
         double[] fx = new double[n];
         double[] fy = new double[n];
 
-        // Particle–particle
+        // ── Build cell lists ────────────────────────────────────────────────
+        @SuppressWarnings("unchecked")
+        List<Integer>[] cells = new List[M_CELLS * M_CELLS];
+        for (int c = 0; c < M_CELLS * M_CELLS; c++)
+            cells[c] = new ArrayList<>();
+
+        int[] cellOf = new int[n];   // cell index for particle i
         for (int i = 0; i < n; i++) {
-            Particle pi = particles.get(i);
-            for (int j = i + 1; j < n; j++) {
-                Particle pj = particles.get(j);
-                double dx = pi.x - pj.x, dy = pi.y - pj.y;
-                double dist = Math.sqrt(dx * dx + dy * dy);
-                double xi = pi.radius + pj.radius - dist;
-                if (xi > 0) {
-                    double fn = k * xi / dist;
-                    fx[i] += fn * dx;  fy[i] += fn * dy;
-                    fx[j] -= fn * dx;  fy[j] -= fn * dy;
+            Particle p = particles.get(i);
+            int cx = (int) Math.floor((p.x + OFFSET) / CELL_SIZE);
+            int cy = (int) Math.floor((p.y + OFFSET) / CELL_SIZE);
+            // Clamp to grid (handles particles exactly on the boundary)
+            if (cx >= M_CELLS) cx = M_CELLS - 1;
+            if (cy >= M_CELLS) cy = M_CELLS - 1;
+            if (cx < 0) cx = 0;
+            if (cy < 0) cy = 0;
+            int cellIdx = cy * M_CELLS + cx;
+            cells[cellIdx].add(i);
+            cellOf[i] = cellIdx;
+        }
+
+        // ── Particle–particle forces via CIM ────────────────────────────────
+        for (int cy = 0; cy < M_CELLS; cy++) {
+            for (int cx = 0; cx < M_CELLS; cx++) {
+                List<Integer> cell1 = cells[cy * M_CELLS + cx];
+                if (cell1.isEmpty()) continue;
+
+                // Iterate over the 3×3 neighbourhood (no periodic wrap)
+                for (int dy = -1; dy <= 1; dy++) {
+                    for (int dx = -1; dx <= 1; dx++) {
+                        int nx = cx + dx;
+                        int ny = cy + dy;
+                        if (nx < 0 || nx >= M_CELLS || ny < 0 || ny >= M_CELLS)
+                            continue;
+
+                        List<Integer> cell2 = cells[ny * M_CELLS + nx];
+                        if (cell2.isEmpty()) continue;
+
+                        for (int ii : cell1) {
+                            Particle pi = particles.get(ii);
+                            for (int jj : cell2) {
+                                // Process each unordered pair exactly once
+                                if (ii >= jj) continue;
+                                Particle pj = particles.get(jj);
+                                double ddx  = pi.x - pj.x;
+                                double ddy  = pi.y - pj.y;
+                                double dist = Math.sqrt(ddx * ddx + ddy * ddy);
+                                double xi   = pi.radius + pj.radius - dist;
+                                if (xi > 0) {
+                                    double fn = k * xi / dist;
+                                    fx[ii] += fn * ddx;  fy[ii] += fn * ddy;
+                                    fx[jj] -= fn * ddx;  fy[jj] -= fn * ddy;
+                                }
+                            }
+                        }
+                    }
                 }
             }
+        }
+
+        // ── Boundary forces (unchanged) ─────────────────────────────────────
+        for (int i = 0; i < n; i++) {
+            Particle pi = particles.get(i);
+            double dist = pi.distFromOrigin();
 
             // Fixed obstacle at origin (repulsive, pushes particle outward)
-            double dist = pi.distFromOrigin();
             double xiObs = R_OBSTACLE + pi.radius - dist;
             if (xiObs > 0 && dist > 1e-12) {
                 double fn = k * xiObs / dist;
