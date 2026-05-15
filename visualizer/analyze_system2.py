@@ -40,9 +40,17 @@ DS         = 0.2   # radial shell width
 
 def find_runs(base_dir, N, k_str):
     """Return list of run directories for given N and k."""
-    pattern = os.path.join(base_dir, f"N{N}_k{k_str}", "seed*")
-    dirs = sorted(glob.glob(pattern))
-    return dirs
+    patterns = [
+        os.path.join(base_dir, "timing", f"N{N}_K{k_str}"),   
+        os.path.join(base_dir, "timing", f"N{N}_k{k_str}"),   
+        os.path.join(base_dir, f"N{N}_K{k_str}", "seed*"),    
+        os.path.join(base_dir, f"N{N}_k{k_str}", "seed*"),   
+    ]
+    for pattern in patterns:
+        dirs = sorted(glob.glob(pattern))
+        if dirs:
+            return dirs
+    return []
 
 
 def load_cfc(path):
@@ -94,10 +102,11 @@ def plot_timing(timing_csv, out_dir, k_str):
     ax.plot(N, t, "o-", color="#3498db", label="TP4 (Tiempo discreto)")
 
     # Fit power law
-    log_n, log_t = np.log(N), np.log(t)
-    slope, intercept, *_ = stats.linregress(log_n, log_t)
-    ax.plot(N, np.exp(intercept) * N**slope, "--", color="#7f8c8d",
-            alpha=0.7, label=f"Ajuste: $N^{{{slope:.2f}}}$")
+    if len(np.unique(N)) >= 2:
+        log_n, log_t = np.log(N), np.log(np.maximum(t, 1e-12))  # avoid log(0)
+        slope, intercept, *_ = stats.linregress(log_n, log_t)
+        ax.plot(N, np.exp(intercept) * N**slope, "--", color="#7f8c8d",
+                alpha=0.7, label=f"Ajuste: $N^{{{slope:.2f}}}$")
 
     ax.set_xlabel("N (número de partículas)")
     ax.set_ylabel("Tiempo de ejecución (s)")
@@ -173,10 +182,11 @@ def scanning_rate_vs_N(base_dir, N_list, k_str, out_dir):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 def plot_energy(base_dir, N, k_str, out_dir, seed=42):
-    run_dir   = os.path.join(base_dir, f"N{N}_k{k_str}", f"seed{seed}")
-    ene_path  = os.path.join(run_dir, "energy.txt")
-    if not os.path.exists(ene_path):
+    runs = find_runs(base_dir, N, k_str)
+    if not runs:
         return
+    run_dir  = runs[0] 
+    ene_path = os.path.join(run_dir, "energy.txt")
     df = pd.read_csv(ene_path)
     fig, ax = plt.subplots(figsize=(8, 4))
     ax.plot(df["time"], df["energy"], lw=0.8, color="#2c3e50")
@@ -267,8 +277,11 @@ def plot_radial_profiles(base_dir, N_list, k_str, out_dir, seed=42):
     jin_near_obs = []   # averaged over S in [1.5, 5] m
 
     for N, color in zip(N_list, colors):
-        run_dir    = os.path.join(base_dir, f"N{N}_k{k_str}", f"seed{seed}")
-        states_path = os.path.join(run_dir, "states.txt")
+        runs = find_runs(base_dir, N, k_str)
+        if not runs:
+            print(f"  No runs found for N={N}, k={k_str}")
+            continue
+        states_path = os.path.join(runs[0], "states.txt")
         if not os.path.exists(states_path):
             print(f"  Missing {states_path}")
             continue
@@ -303,8 +316,10 @@ def plot_radial_profiles(base_dir, N_list, k_str, out_dir, seed=42):
     # Detail of Jin near obstacle
     fig_det, ax_det = plt.subplots(figsize=(8, 5))
     for N, color in zip(N_list, colors):
-        run_dir    = os.path.join(base_dir, f"N{N}_k{k_str}", f"seed{seed}")
-        states_path = os.path.join(run_dir, "states.txt")
+        runs = find_runs(base_dir, N, k_str)   # ← fix: usar find_runs
+        if not runs:
+            continue
+        states_path = os.path.join(runs[0], "states.txt")
         if not os.path.exists(states_path):
             continue
         S, rho, vmean, jin = build_radial_profile(states_path)
@@ -322,31 +337,98 @@ def plot_radial_profiles(base_dir, N_list, k_str, out_dir, seed=42):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 1.4  Comparison across k values
+# FUNCIONES DE ESCALADO (MODULARES)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def compare_k_values(base_dir, N_list, k_list, out_dir):
-    cmap   = plt.cm.viridis
-    colors = [cmap(i / max(len(k_list) - 1, 1)) for i in range(len(k_list))]
+def get_characteristic_value(df_j):
+    """
+    Extrae el valor que caracteriza la curva para graficar vs k.
+    Podés elegir n_star (donde está el pico) o j_max (el valor del pico).
+    """
+    idx_max = df_j["J_mean"].idxmax()
+    n_star = df_j["N"].iloc[idx_max]
+    j_max = df_j["J_mean"].max()
+    
+    return j_max  # j_max o n_star según lo que querramos mostrar como escalar representativo
 
-    fig_J, ax_J = plt.subplots(figsize=(8, 5))
+# ═══════════════════════════════════════════════════════════════════════════════
+# TAREA 1.4: COMPARACIÓN DE K
+# ═══════════════════════════════════════════════════════════════════════════════
 
-    for k_val, color in zip(k_list, colors):
+def run_task_1_4_analysis(base_dir, k_list, N_list, out_dir):
+    # 1. Validación de dt
+    max_k = max(k_list)
+    max_n = max(N_list)
+    runs_val = find_runs(base_dir, max_n, str(int(max_k)))
+    if runs_val:
+        # Usamos el seed que encuentre
+        s_num = int(re.findall(r'\d+', os.path.basename(runs_val[0]))[0])
+        plot_energy(base_dir, max_n, str(int(max_k)), out_dir, seed=s_num)
+
+    # Estructura para guardar los escalares vs k
+    k_values_sorted = sorted(k_list)
+    escalares_j = []
+    escalares_jin = []
+
+    fig, ax = plt.subplots(1, 2, figsize=(14, 6))
+    cmap = matplotlib.colormaps["viridis"]
+    colors = [cmap(i / max(len(k_list)-1, 1)) for i in range(len(k_list))]
+
+    # 2. Comparación de curvas <J>(N) y <Jin>(N)
+    for i, k_val in enumerate(k_values_sorted):
         k_str = str(int(k_val))
-        csv   = os.path.join(base_dir, f"J_vs_N_k{k_str}.csv")
-        if not os.path.exists(csv):
-            print(f"  Missing {csv} – run scanning_rate_vs_N first for k={k_str}")
-            continue
-        df = pd.read_csv(csv)
-        ax_J.errorbar(df["N"], df["J_mean"], yerr=df["J_std"],
-                      fmt="o-", capsize=4, color=color, label=f"k={k_str}")
+        csv_path = os.path.join(out_dir, f"J_vs_N_k{k_str}.csv")
+        
+        if os.path.exists(csv_path):
+            df = pd.read_csv(csv_path)
+            
+            # --- CURVA J(N) ---
+            ax[0].errorbar(df["N"], df["J_mean"], yerr=df["J_std"], 
+                           fmt="o-", color=colors[i], label=f"k={k_str}")
+            
+            # Extraemos el escalar de esta curva (ej: N*)
+            val_j = get_characteristic_value(df)
+            escalares_j.append(val_j)
 
-    ax_J.set_xlabel("N")
-    ax_J.set_ylabel("Scanning rate J  [1/s]")
-    ax_J.set_title("Scanning rate <J>(N) para distintos k")
-    ax_J.legend()
-    ax_J.grid(True, alpha=0.3)
-    savefig(fig_J, os.path.join(out_dir, "scanning_rate_compare_k.png"))
+            # --- CURVA Jin(N) para S~2 ---
+            # Promediamos los Jin de todos los seeds para S cercano a 2
+            jin_n_values = []
+            for N in N_list:
+                run_dirs = find_runs(base_dir, N, k_str)
+                jins_seeds = []
+                for r_dir in run_dirs:
+                    S, _, _, jin = build_radial_profile(os.path.join(r_dir, "states.txt"))
+                    # Buscamos el índice donde S es aproximadamente 2.0
+                    idx_s2 = np.abs(S - 2.0).argmin()
+                    jins_seeds.append(jin[idx_s2])
+                
+                if jins_seeds:
+                    jin_n_values.append(np.mean(jins_seeds))
+            
+            if len(jin_n_values) == len(N_list):
+                ax[1].plot(N_list, jin_n_values, "s--", color=colors[i], label=f"k={k_str}")
+                escalares_jin.append(max(jin_n_values))
+
+    ax[0].set_title("Scanning Rate $\langle J \\rangle$ vs N")
+    ax[0].set_ylabel("$\langle J \\rangle$ [1/s]")
+    ax[1].set_title("Flujo Radial $\langle J_{in} |_{S \\approx 2} \\rangle$ vs N")
+    ax[1].set_ylabel("Flujo en S=2")
+    for a in ax:
+        a.set_xlabel("N"); a.legend(); a.grid(True, alpha=0.3)
+    
+    savefig(fig, os.path.join(out_dir, "1_4_comparacion_curvas.png"))
+
+    # 3. Gráfico del ESCALAR vs k
+    fig_esc, ax_esc = plt.subplots(figsize=(8, 6))
+    ax_esc.plot(k_values_sorted, escalares_j, "ro-", label=" Escalar ")
+    ax_esc.set_xscale("log")
+    ax_esc.set_xlabel("Constante elástica k [N/m]")
+    ax_esc.set_ylabel("Escalar característico")
+    ax_esc.set_title("Evolución del parámetro característico vs k")
+    ax_esc.grid(True, which="both", alpha=0.3)
+    ax_esc.legend()
+    
+    savefig(fig_esc, os.path.join(out_dir, "1_4_escalar_vs_k.png"))
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -391,7 +473,7 @@ def main():
     # Cross-k comparison
     if len(k_list) > 1:
         print("\nComparing k values…")
-        compare_k_values(args.base, N_list, k_list, args.out)
+        run_task_1_4_analysis(args.base, k_list, N_list, args.out)
 
     print("\nAll done.")
 
