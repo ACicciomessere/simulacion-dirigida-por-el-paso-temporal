@@ -25,6 +25,11 @@ R_OBSTACLE = 1.0
 R_PARTICLE = 1.0
 DS         = 0.2   # radial shell width
 
+# Banda de capas cercanas al obstáculo sobre la que se promedia Jin para 1.3/1.4.
+# Identificada del detalle Jin(S) en S ∈ [1.5, 5] m.
+S_BAND_LO  = 2.0
+S_BAND_HI  = 3.0
+
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # I/O helpers
@@ -45,16 +50,27 @@ def find_runs(base_dir, N, k_str):
 def find_runs2(base_dir="system2"):
     base_path = Path(base_dir)
     config_groups = {}
-    
+
     for file_path in base_path.glob("run_*/N*_[kK]*/states.txt"):
         config_name = file_path.parent.name.lower()
-        
+
         if config_name not in config_groups:
             config_groups[config_name] = []
-        
+
         config_groups[config_name].append(file_path)
-        
+
     return config_groups
+
+
+def find_seed_dirs(base_dir, N, k_str):
+    """Devuelve todos los directorios run_*/N{N}_k{k_str}/ (uno por seed/realización)."""
+    base_path = Path(base_dir)
+    k_int = int(float(k_str))
+    out = []
+    for cfg in base_path.glob(f"run_*/N{N}_[kK]{k_int}"):
+        if cfg.is_dir() and (cfg / "cfc.txt").exists():
+            out.append(cfg)
+    return sorted(out)
 
 def load_cfc(path):
     df = pd.read_csv(path)
@@ -123,63 +139,48 @@ def plot_timing(timing_csv, out_dir, k_str):
 # 1.2  Scanning rate J(N)
 # ═══════════════════════════════════════════════════════════════════════════════
 
-def compute_J_weighted(cfc_vals, time_vals, time_err):
-    """
-    Regresión lineal ponderada: cfc en función de time.
-    Usa 1/time_err^2 como pesos para propagar el error real entre corridas.
-    """
-    # Ignorar puntos sin error (time_err == 0 da peso infinito)
-    mask = time_err > 0
-    if mask.sum() < 2:
-        return 0.0, 0.0
-
-    w = 1.0 / time_err[mask]**2
-    x = time_vals[mask]
-    y = cfc_vals[mask]
-
-    # Fórmulas de mínimos cuadrados ponderados
-    sw   = w.sum()
-    swx  = (w * x).sum()
-    swx2 = (w * x**2).sum()
-    swy  = (w * y).sum()
-    swxy = (w * x * y).sum()
-
-    denom = sw * swx2 - swx**2
-    slope = (sw * swxy - swx * swy) / denom
-    slope_err = np.sqrt(sw / denom)   # error del slope propagado
-
-    return slope, slope_err
+def J_from_cfc(time_vals, cfc_vals):
+    """Pendiente J de la interpolación lineal de Cfc(t) para una realización."""
+    if len(time_vals) < 2:
+        return 0.0
+    slope, _intercept, *_ = stats.linregress(time_vals, cfc_vals)
+    return slope
 
 
 def scanning_rate_vs_N(base_dir, N_list, k_str, out_dir):
+    """
+    Para cada N:
+      - Lee cfc.txt de TODAS las seeds (un seed por carpeta run_*/N{N}_k{k}/).
+      - Calcula J_s = pendiente(linear_fit(t, cfc)) por seed.
+      - <J> = mean(J_s), σ_J = std(J_s) sobre seeds.
+    Esto reemplaza la regresión ponderada sobre cfc promediado.
+    """
     J_mean, J_std, Ns_ok = [], [], []
 
     for N in N_list:
-        runs = find_runs(base_dir, N, k_str)
-        if not runs:
+        seed_dirs = find_seed_dirs(base_dir, N, k_str)
+        if not seed_dirs:
             print(f"  No runs found for N={N}, k={k_str}")
             continue
 
-        cfc_path = os.path.join(runs[0], "cfc.txt")  # solo hay uno en final_run
-        if not os.path.exists(cfc_path):
+        Js = []
+        for d in seed_dirs:
+            df = pd.read_csv(d / "cfc.txt")
+            if len(df) < 2:
+                continue
+            Js.append(J_from_cfc(df["time"].values, df["cfc"].values))
+
+        if not Js:
             continue
 
-        df = pd.read_csv(cfc_path)
-        if len(df) < 2:
-            continue
-
-        slope, slope_err = compute_J_weighted(
-            df["cfc"].values,
-            df["time"].values,
-            df["time_err"].values
-        )
-
-        J_mean.append(slope)
-        J_std.append(slope_err)   # error propagado desde time_err, no std entre runs
+        Js = np.array(Js)
+        J_mean.append(Js.mean())
+        J_std.append(Js.std(ddof=1) if len(Js) > 1 else 0.0)
         Ns_ok.append(N)
-        if not Ns_ok:
-            print("No scanning-rate data found.")
-            return
+
+    if not Ns_ok:
+        print("No scanning-rate data found.")
+        return None
 
     Ns_ok  = np.array(Ns_ok)
     J_mean = np.array(J_mean)
@@ -419,8 +420,15 @@ def run_task_1_4_analysis(base_dir, k_list, N_list, out_dir):
         plot_energy(base_dir, max_n, str(int(max_k)), out_dir)
 
     k_values_sorted = sorted(k_list)
-    escalares_j = []
-    escalares_j_err = []
+    # Escalares característicos por k. Capturamos los DOS más relevantes:
+    #   max_J[k]    = max_N <J>(N,k)           — magnitud del scanning rate óptimo
+    #   N_star[k]   = argmax_N <J>(N,k)        — N que maximiza el scanning rate
+    #   max_Jin[k]  = max_N <Jin|S_band>(N,k)
+    max_J,    max_J_err    = [], []
+    N_star_J                = []
+    max_Jin,  max_Jin_err  = [], []
+    N_star_Jin              = []
+
     fig, ax = plt.subplots(1, 2, figsize=(14, 6))
     cmap = matplotlib.colormaps["viridis"]
     colors = [cmap(i / max(len(k_list)-1, 1)) for i in range(len(k_list))]
@@ -428,68 +436,94 @@ def run_task_1_4_analysis(base_dir, k_list, N_list, out_dir):
     for i, k_val in enumerate(k_values_sorted):
         k_str = str(int(k_val))
         csv_path = os.path.join(out_dir, f"J_vs_N_k{k_str}.csv")
-        
-        if os.path.exists(csv_path):
-            df = pd.read_csv(csv_path)
-            
-            # --- PANEL 0: CURVA J(N) (Se mantiene leyendo del CSV de la tarea 1.2) ---
-            ax[0].errorbar(df["N"], df["J_mean"], yerr=df["J_std"], 
-                           fmt="o-", color=colors[i], capsize=4, label=f"k={k_str}")
-            
-            idx_max = df["J_mean"].idxmax() 
-            escalares_j.append(df["J_mean"].iloc[idx_max])   
-            escalares_j_err.append(df["J_std"].iloc[idx_max])
 
-            # --- PANEL 1: CURVA Jin(N) en S ~ 2 con barras de error reales de semilla ---
-            jin_n_means = []
-            jin_n_stds = []
-            
-            for N in N_list:
-                target_key = f"n{N}_k{int(k_val)}"
-                run_files = config_groups.get(target_key, [])
-                jins_seeds = []
-                
-                for file_path in run_files:
-                    S, _, _, jin = build_radial_profile(file_path)
-                    # Encontramos la posición espacial más cercana a S = 2.0 metros
-                    idx_s2 = np.abs(S - 2.0).argmin()
-                    jins_seeds.append(jin[idx_s2])
-                
-                if jins_seeds:
-                    jin_n_means.append(np.mean(jins_seeds))
-                    jin_n_stds.append(np.std(jins_seeds) if len(jins_seeds) > 1 else 0.0)
-                else:
-                    jin_n_means.append(0.0)
-                    jin_n_stds.append(0.0)
-            
-            if len(jin_n_means) == len(N_list):
-                # Aplicamos barras de error (capsize) explícitas representando la desviación estándar real
-                ax[1].errorbar(N_list, jin_n_means, yerr=jin_n_stds, fmt="s--", 
-                               color=colors[i], capsize=4, label=f"k={k_str}")
+        if not os.path.exists(csv_path):
+            continue
+
+        df = pd.read_csv(csv_path)
+
+        # --- PANEL 0: <J>(N) por k ---
+        ax[0].errorbar(df["N"], df["J_mean"], yerr=df["J_std"],
+                       fmt="o-", color=colors[i], capsize=4, label=f"k={k_str}")
+        idx_max_J = df["J_mean"].idxmax()
+        max_J.append(df["J_mean"].iloc[idx_max_J])
+        max_J_err.append(df["J_std"].iloc[idx_max_J])
+        N_star_J.append(df["N"].iloc[idx_max_J])
+
+        # --- PANEL 1: <Jin|S_band>(N) por k, promediado sobre capas cercanas al obstáculo ---
+        jin_n_means, jin_n_stds = [], []
+        for N in N_list:
+            target_key = f"n{N}_k{int(k_val)}"
+            run_files = config_groups.get(target_key, [])
+            jins_seeds = []
+            for file_path in run_files:
+                S, _, _, jin = build_radial_profile(file_path)
+                band = (S >= S_BAND_LO) & (S <= S_BAND_HI)
+                if band.any():
+                    jins_seeds.append(np.nanmean(jin[band]))
+            if jins_seeds:
+                jin_n_means.append(np.mean(jins_seeds))
+                jin_n_stds .append(np.std(jins_seeds, ddof=1) if len(jins_seeds) > 1 else 0.0)
+            else:
+                jin_n_means.append(np.nan)
+                jin_n_stds .append(0.0)
+
+        jin_n_means = np.array(jin_n_means)
+        jin_n_stds  = np.array(jin_n_stds)
+
+        ax[1].errorbar(N_list, jin_n_means, yerr=jin_n_stds, fmt="s--",
+                       color=colors[i], capsize=4, label=f"k={k_str}")
+
+        if np.isfinite(jin_n_means).any():
+            idx_max_Jin = int(np.nanargmax(jin_n_means))
+            max_Jin    .append(jin_n_means[idx_max_Jin])
+            max_Jin_err.append(jin_n_stds [idx_max_Jin])
+            N_star_Jin .append(N_list[idx_max_Jin])
+        else:
+            max_Jin.append(np.nan); max_Jin_err.append(0.0); N_star_Jin.append(np.nan)
 
     ax[0].set_title("Scanning Rate $\\langle J \\rangle$ vs N")
     ax[0].set_ylabel("$\\langle J \\rangle$ [1/s]")
-    ax[1].set_title("Flujo Radial $\\langle J_{in} |_{S \\approx 2} \\rangle$ vs N")
-    ax[1].set_ylabel("Flujo en S=2")
+    ax[1].set_title(f"Flujo Radial $\\langle J_{{in}} \\rangle$ vs N  (S∈[{S_BAND_LO},{S_BAND_HI}] m)")
+    ax[1].set_ylabel("$\\langle J_{in} \\rangle$  [m$^{-2}$ s$^{-1}$]")
     for a in ax:
         a.set_xlabel("N")
         a.legend()
         a.grid(True, alpha=0.3)
-    
     savefig(fig, os.path.join(out_dir, "1_4_comparacion_curvas.png"))
 
-    # 3. Gráfico del ESCALAR vs k
-    fig_esc, ax_esc = plt.subplots(figsize=(8, 6))
-    ax_esc.errorbar(k_values_sorted, escalares_j, yerr=escalares_j_err,
-                fmt="ro-", capsize=5, label="$N^*$ característico")
-    ax_esc.set_xscale("log")
-    ax_esc.set_xlabel("Constante elástica k [N/m]")
-    ax_esc.set_ylabel("$J^*$ [1/s]")
-    ax_esc.set_title("Evolución del parámetro característico vs k")
-    ax_esc.grid(True, which="both", alpha=0.3)
-    ax_esc.legend()
-    
+    # 3. Escalares vs k — dos paneles consistentes: max(<·>) y N*(k).
+    fig_esc, ax_esc = plt.subplots(1, 2, figsize=(14, 5))
+
+    ax_esc[0].errorbar(k_values_sorted, max_J,   yerr=max_J_err,
+                       fmt="o-", color="#c0392b", capsize=5, label="max $\\langle J \\rangle$")
+    ax_esc[0].errorbar(k_values_sorted, max_Jin, yerr=max_Jin_err,
+                       fmt="s-", color="#2980b9", capsize=5,
+                       label=f"max $\\langle J_{{in}}|_{{S\\in[{S_BAND_LO},{S_BAND_HI}]}} \\rangle$")
+    ax_esc[0].set_xscale("log")
+    ax_esc[0].set_xlabel("k [N/m]")
+    ax_esc[0].set_ylabel("Máximo de la curva")
+    ax_esc[0].set_title("max($\\cdot$) vs k")
+    ax_esc[0].grid(True, which="both", alpha=0.3)
+    ax_esc[0].legend()
+
+    ax_esc[1].plot(k_values_sorted, N_star_J,   "o-", color="#c0392b", label="$N^*$ de $\\langle J \\rangle$")
+    ax_esc[1].plot(k_values_sorted, N_star_Jin, "s-", color="#2980b9", label="$N^*$ de $\\langle J_{in} \\rangle$")
+    ax_esc[1].set_xscale("log")
+    ax_esc[1].set_xlabel("k [N/m]")
+    ax_esc[1].set_ylabel("$N^*$")
+    ax_esc[1].set_title("$N^*(k)$")
+    ax_esc[1].grid(True, which="both", alpha=0.3)
+    ax_esc[1].legend()
+
     savefig(fig_esc, os.path.join(out_dir, "1_4_escalar_vs_k.png"))
+
+    # Guardar tabla resumen
+    pd.DataFrame({
+        "k": k_values_sorted,
+        "max_J": max_J, "max_J_err": max_J_err, "N_star_J": N_star_J,
+        "max_Jin": max_Jin, "max_Jin_err": max_Jin_err, "N_star_Jin": N_star_Jin,
+    }).to_csv(os.path.join(out_dir, "1_4_escalares.csv"), index=False)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

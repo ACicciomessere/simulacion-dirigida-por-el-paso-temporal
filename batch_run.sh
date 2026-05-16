@@ -18,9 +18,20 @@ echo "=== Iniciando tanda de simulación: $TARGET_DIR (Seeds: $SEEDS) ==="
 K_VALUES=(100 1000 10000 100000)
 N_LIST="100,200,300,500,600,800,1000"
 
+# dt adaptativo: el período de oscilación elástica es tau = 2*pi*sqrt(m/k).
+# Pedimos >= 50 pasos por período => dt = tau/50.
+# Para k=1e5 esto da dt ~= 4e-4; redondeamos a la baja a potencias seguras.
+declare -A DT_BY_K=(
+  [100]="0.001"
+  [1000]="0.001"
+  [10000]="0.0005"
+  [100000]="0.0001"
+)
+
 for K in "${K_VALUES[@]}"; do
-  echo "--- Ejecutando para k=$K ---"
-  ./run_system2.sh -Nlist "$N_LIST" -k "$K" -seeds "$SEEDS"
+  DT="${DT_BY_K[$K]}"
+  echo "--- Ejecutando para k=$K (dt=$DT) ---"
+  ./run_system2.sh -Nlist "$N_LIST" -k "$K" -seeds "$SEEDS" -dt "$DT"
 
   # Mover archivos sueltos
   find "$BASE_DIR" -maxdepth 1 -type f ! -name ".*" -exec mv {} "$TARGET_DIR/" \;
