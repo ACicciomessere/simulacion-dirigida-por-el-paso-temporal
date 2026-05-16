@@ -507,29 +507,33 @@ def main():
 
     N_list = [int(x) for x in args.Nlist.split(",")]
     k_list = [float(x) for x in args.k.split(",")]
-    k_ref = "1000"
+    
     os.makedirs(args.out, exist_ok=True)
 
-    # 1.1 — timing
     for k_val in k_list:
         k_str = str(int(k_val))
         print(f"\n── k = {k_str} N/m ──────────────────────────────")
+
+        # Timing
         timing_csv = os.path.join(args.base, f"timing_k{k_str}.csv")
         if os.path.exists(timing_csv):
+            print("Plotting timing…")
             plot_timing(timing_csv, args.out, k_str)
+
+        # Energy validation (one example run)
         plot_energy(args.base, N_list[0], k_str, args.out)
 
-    # 1.2 — scanning rate:
-    print(f"\nComputing scanning rate (k_ref={k_ref})…")
-    scanning_rate_vs_N(args.base, N_list, k_ref, args.out)
+        # Scanning rate
+        print("Computing scanning rate…")
+        scanning_rate_vs_N(args.base, N_list, k_str, args.out)
 
-    # 1.3 — perfiles radiales:
-    print(f"Building radial profiles (k_ref={k_ref})…")
-    plot_radial_profiles(args.base, N_list, k_ref, args.out)
+        # Radial profiles
+        print("Building radial profiles con bandas de error…")
+        plot_radial_profiles(args.base, N_list, k_str, args.out, seed=args.seed)
 
-    # 1.4 — comparación entre k values
+    # Cross-k comparison
     if len(k_list) > 1:
-        print("\nComparing k values…")
+        print("\nComparing k values con barras de error cruzadas…")
         run_task_1_4_analysis(args.base, k_list, N_list, args.out)
 
     print("\nAll done.")
