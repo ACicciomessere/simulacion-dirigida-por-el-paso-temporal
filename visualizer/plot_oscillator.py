@@ -57,7 +57,7 @@ def plot_trajectories(traj_path, out_dir):
         ax.set_title(LABELS[col], fontsize=11)
         ax.set_xlabel("Tiempo (s)")
         ax.set_ylabel("Posición (m)")
-        ax.legend(fontsize=8)
+        ax.legend(fontsize=8, loc='upper left', bbox_to_anchor=(1, 1))
         ax.grid(True, alpha=0.3)
 
     fig.suptitle("Oscilador amortiguado – trayectorias", fontsize=13)
@@ -74,7 +74,7 @@ def plot_trajectories(traj_path, out_dir):
     ax2.set_xlabel("Tiempo (s)")
     ax2.set_ylabel("Posición (m)")
     ax2.set_title("Oscilador amortiguado – comparación de integradores")
-    ax2.legend()
+    ax2.legend(loc='upper left', bbox_to_anchor=(1, 1))
     ax2.grid(True, alpha=0.3)
     savefig(fig2, os.path.join(out_dir, "trajectories_combined.png"))
 
@@ -87,10 +87,56 @@ def plot_trajectories(traj_path, out_dir):
     ax3.set_xlabel("Tiempo (s)")
     ax3.set_ylabel("Error absoluto |x_num − x_ana| (m)")
     ax3.set_title("Error vs. Solución analítica") #más residuo q error, pero bueno
-    ax3.legend()
+    ax3.legend(loc='upper left', bbox_to_anchor=(1, 1))
     ax3.grid(True, alpha=0.3)
     ax3.set_yscale("log")          # log por si los errores difieren en órdenes de magnitud
     savefig(fig3, os.path.join(out_dir, "trajectories_error.png"))
+
+    # zoom en sección detallada (t ~ 1.6, posición ~ 0.25)
+    fig4, (ax4a, ax4b) = plt.subplots(1, 2, figsize=(14, 5))
+    
+    # Encontrar índice cercano a t=1.6
+    t_target = 1.660
+    idx_center = np.argmin(np.abs(t - t_target))
+    
+    # Ventana de zoom: ±0.3 segundos alrededor de t=1.6
+    zoom_width = 0.05
+    zoom_mask = (t >= t[idx_center] - zoom_width) & (t <= t[idx_center] + zoom_width)
+    t_zoom = t[zoom_mask]
+    
+    # Gráfico completo con indicador de zoom
+    ax4a.plot(t, df[ana_col], color=COLORS["r_analytical"],
+              lw=2, label="Analítica", zorder=2)
+    for col in INTEGRATORS:
+        ax4a.plot(t, df[col], color=COLORS[col],
+                  lw=1.5, ls="--", label=LABELS[col], zorder=3)
+    ax4a.set_xlabel("Tiempo (s)")
+    ax4a.set_ylabel("Posición (m)")
+    ax4a.set_title("Trayectoria completa")
+    ax4a.legend(fontsize=8, loc='upper left', bbox_to_anchor=(1, 1))
+    ax4a.grid(True, alpha=0.3)
+    
+    # Zoom detallado
+    ax4b.plot(t_zoom, df[ana_col][zoom_mask], color=COLORS["r_analytical"],
+              lw=2, label="Analítica", zorder=2)
+    for col in INTEGRATORS:
+        ax4b.plot(t_zoom, df[col][zoom_mask], color=COLORS[col],
+                  lw=1.5, ls="--", label=LABELS[col], zorder=3)
+    
+    # Ajustar límites del eje y para que se amplie también en la vertical
+    y_zoom_values = df[zoom_mask].drop(columns=['time']).values.flatten()
+    y_margin = (y_zoom_values.max() - y_zoom_values.min()) * 0.1  # 10% margen
+    ax4b.set_ylim(y_zoom_values.min() - y_margin, y_zoom_values.max() + y_margin)
+    
+    ax4b.set_xlabel("Tiempo (s)")
+    ax4b.set_ylabel("Posición (m)")
+    ax4b.set_title(f"Zoom: t ≈ {t_target:.1f}s, x ≈ 0.25 m (diferencias en detalle)")
+    ax4b.legend(fontsize=8, loc='upper left', bbox_to_anchor=(1, 1))
+    ax4b.grid(True, alpha=0.3)
+    
+    fig4.suptitle("Oscilador amortiguado – análisis en detalle", fontsize=13)
+    fig4.tight_layout()
+    savefig(fig4, os.path.join(out_dir, "trajectories_zoom.png"))
 
 # ── 2. MSE vs dt (log-log) ────────────────────────────────────────────────────
 
@@ -113,18 +159,10 @@ def plot_mse(mse_path, out_dir):
         if mse_col:
             ax.loglog(dts, df[mse_col], "o-", color=COLORS[col], label=LABELS[col])
 
-    euler_col = col_map.get("r_euler", "mse_euler")
-    # Reference lines
-    xref = np.array([dts.min(), dts.max()])
-    for order, ls, lbl in [(1, ":", "O(dt)"), (2, "--", "O(dt²)"), (4, "-.", "O(dt⁴)")]:
-        scale = df[euler_col].iloc[0] / dts[0]**order
-        ax.loglog(xref, scale * xref**order, color="gray", ls=ls, lw=0.8,
-                  alpha=0.6, label=lbl)
-
     ax.set_xlabel("Paso temporal dt (s)")
     ax.set_ylabel("Error cuadrático medio (m²)")
     ax.set_title("ECM vs dt  –  oscilador amortiguado")
-    ax.legend()
+    ax.legend(loc='upper left', bbox_to_anchor=(1, 1))
     ax.grid(True, which="both", alpha=0.3)
     savefig(fig, os.path.join(out_dir, "mse_vs_dt.png"))
 

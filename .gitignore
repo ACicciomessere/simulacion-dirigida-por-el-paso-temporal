@@ -1,3 +1,5 @@
 /output
 /target
 *.mp4
+/.venv
+/.vscode

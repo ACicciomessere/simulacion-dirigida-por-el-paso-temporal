@@ -8,22 +8,22 @@ import java.util.*;
  * Compares Euler, Verlet original, Beeman, and Gear PC order-5 integrators.
  *
  * Parameters (from Teorica_4 slide 36):
- *   m=70 kg, k=1e4 N/m, gamma=100 kg/s, tf=5 s
- *   r(0)=1 m, v(0)=-A*gamma/(2m) m/s  with A=1
- *   Force: f = -k*r - gamma*v
- *   Analytical: r(t) = exp(-gamma/(2m)*t) * cos(omega*t)
+ * m=70 kg, k=1e4 N/m, gamma=100 kg/s, tf=5 s
+ * r(0)=1 m, v(0)=-A*gamma/(2m) m/s with A=1
+ * Force: f = -k*r - gamma*v
+ * Analytical: r(t) = exp(-gamma/(2m)*t) * cos(omega*t)
  */
 public class OscillatorSimulation {
 
-    static final double M     = 70.0;
-    static final double K     = 1e4;
+    static final double M = 70.0;
+    static final double K = 1e4;
     static final double GAMMA = 100.0;
-    static final double TF    = 5.0;
-    static final double R0    = 1.0;
-    static final double V0    = -GAMMA / (2.0 * M);  // = -5/7 m/s
+    static final double TF = 5.0;
+    static final double R0 = 1.0;
+    static final double V0 = -GAMMA / (2.0 * M); // = -5/7 m/s
 
     // Gear PC order-5 corrector coefficients for f(r, v) (velocity-dependent)
-    static final double[] GEAR_ALPHA = {3.0/16, 251.0/360, 1.0, 11.0/18, 1.0/6, 1.0/60};
+    static final double[] GEAR_ALPHA = { 3.0 / 16, 251.0 / 360, 1.0, 11.0 / 18, 1.0 / 6, 1.0 / 60 };
 
     // ── Force & analytical ──────────────────────────────────────────────────
 
@@ -68,7 +68,7 @@ public class OscillatorSimulation {
         pos[0] = r;
 
         for (int i = 1; i <= steps; i++) {
-            double vBack = (r - rPrev) / dt;       // backward-difference velocity
+            double vBack = (r - rPrev) / dt; // backward-difference velocity
             double a = force(r, vBack) / M;
             double rNext = 2.0 * r - rPrev + a * dt * dt;
             rPrev = r;
@@ -110,28 +110,29 @@ public class OscillatorSimulation {
     // ── Gear Predictor-Corrector order 5 ────────────────────────────────────
     // Stores scaled derivatives: c[q] = r^(q)(t) * dt^q / q!
     // Predictor: Pascal-triangle expansion.
-    // Corrector: c[q] += alpha[q] * deltaR2, where deltaR2 = a_actual*dt^2/2 - c[2].
+    // Corrector: c[q] += alpha[q] * deltaR2, where deltaR2 = a_actual*dt^2/2 -
+    // c[2].
 
     static double[] runGearPC(double dt) {
         int steps = (int) Math.round(TF / dt);
         double[] pos = new double[steps + 1];
 
         // Compute initial derivatives for f = -k*r - gamma*v
-        double r0  = R0, r1 = V0;
-        double r2  = force(r0, r1) / M;
-        double r3  = (-K * r1 - GAMMA * r2) / M;
-        double r4  = (-K * r2 - GAMMA * r3) / M;
-        double r5  = (-K * r3 - GAMMA * r4) / M;
+        double r0 = R0, r1 = V0;
+        double r2 = force(r0, r1) / M;
+        double r3 = (-K * r1 - GAMMA * r2) / M;
+        double r4 = (-K * r2 - GAMMA * r3) / M;
+        double r5 = (-K * r3 - GAMMA * r4) / M;
 
         // Scale to c[q] = r^(q) * dt^q / q!
         double dt2 = dt * dt, dt3 = dt2 * dt, dt4 = dt3 * dt, dt5 = dt4 * dt;
         double[] c = {
-            r0,
-            r1 * dt,
-            r2 * dt2 / 2.0,
-            r3 * dt3 / 6.0,
-            r4 * dt4 / 24.0,
-            r5 * dt5 / 120.0
+                r0,
+                r1 * dt,
+                r2 * dt2 / 2.0,
+                r3 * dt3 / 6.0,
+                r4 * dt4 / 24.0,
+                r5 * dt5 / 120.0
         };
         pos[0] = c[0];
 
@@ -139,17 +140,17 @@ public class OscillatorSimulation {
             // ─ Predict (Pascal triangle) ─
             double[] cp = new double[6];
             cp[0] = c[0] + c[1] + c[2] + c[3] + c[4] + c[5];
-            cp[1] =        c[1] + 2*c[2] + 3*c[3] + 4*c[4] + 5*c[5];
-            cp[2] =               c[2] + 3*c[3] + 6*c[4] + 10*c[5];
-            cp[3] =                      c[3] + 4*c[4] + 10*c[5];
-            cp[4] =                             c[4] + 5*c[5];
-            cp[5] =                                    c[5];
+            cp[1] = c[1] + 2 * c[2] + 3 * c[3] + 4 * c[4] + 5 * c[5];
+            cp[2] = c[2] + 3 * c[3] + 6 * c[4] + 10 * c[5];
+            cp[3] = c[3] + 4 * c[4] + 10 * c[5];
+            cp[4] = c[4] + 5 * c[5];
+            cp[5] = c[5];
 
             // ─ Evaluate ─
             double rPred = cp[0];
-            double vPred = cp[1] / dt;               // cp[1] = v * dt  →  v = cp[1]/dt
-            double aActual  = force(rPred, vPred) / M;
-            double deltaR2  = aActual * dt2 / 2.0 - cp[2];
+            double vPred = cp[1] / dt; // cp[1] = v * dt → v = cp[1]/dt
+            double aActual = force(rPred, vPred) / M;
+            double deltaR2 = aActual * dt2 / 2.0 - cp[2];
 
             // ─ Correct ─
             for (int q = 0; q < 6; q++) {
@@ -178,11 +179,11 @@ public class OscillatorSimulation {
         new File(outDir).mkdirs();
 
         // 1.2 – Trajectories at a reference dt
-        double dtRef = 1e-3;
+        double dtRef = 1e-2;
         writeTrajectories(outDir + "/trajectories.csv", dtRef);
 
         // 1.3 – MSE vs dt (log-log convergence study)
-        double[] dtValues = {1e-2, 5e-3, 1e-3, 5e-4, 1e-4, 5e-5, 1e-5};
+        double[] dtValues = { 1e-2, 5e-3, 1e-3, 5e-4, 1e-4, 5e-5, 1e-5 };
         writeMSE(outDir + "/mse_vs_dt.csv", dtValues);
 
         System.out.println("System 1 done → " + outDir);
@@ -190,10 +191,10 @@ public class OscillatorSimulation {
 
     static void writeTrajectories(String path, double dt) throws IOException {
         int steps = (int) Math.round(TF / dt);
-        double[] euler  = runEuler(dt);
+        double[] euler = runEuler(dt);
         double[] verlet = runVerlet(dt);
         double[] beeman = runBeeman(dt);
-        double[] gear   = runGearPC(dt);
+        double[] gear = runGearPC(dt);
 
         try (PrintWriter pw = new PrintWriter(new FileWriter(path))) {
             pw.println("time,r_euler,r_verlet,r_beeman,r_gear,r_analytical");
@@ -212,7 +213,7 @@ public class OscillatorSimulation {
         try (PrintWriter pw = new PrintWriter(new FileWriter(path))) {
             pw.println("dt,mse_euler,mse_verlet,mse_beeman,mse_gear");
             for (double dt : dtValues) {
-                double mseE = mse(runEuler(dt),  dt);
+                double mseE = mse(runEuler(dt), dt);
                 double mseV = mse(runVerlet(dt), dt);
                 double mseB = mse(runBeeman(dt), dt);
                 double mseG = mse(runGearPC(dt), dt);
