@@ -16,7 +16,7 @@ python3 final_run.py
 ## Ahora los podes animar
 python3 visualizer/analyze_system2.py \
     --base output/system2 \
-    --k    100,1000,10000,100000 \
+    --k    100,1000,10000 \
     --Nlist 100,200,300,500,600,800,1000 \
     --out  output/system2/plots
 

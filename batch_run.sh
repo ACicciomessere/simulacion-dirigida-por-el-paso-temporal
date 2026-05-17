@@ -15,7 +15,7 @@ mkdir -p "$TARGET_DIR"
 
 echo "=== Iniciando tanda de simulación: $TARGET_DIR (Seeds: $SEEDS) ==="
 
-K_VALUES=(100 1000 10000 100000)
+K_VALUES=(100 1000 10000)
 N_LIST="100,200,300,500,600,800,1000"
 
 # dt adaptativo: el período de oscilación elástica es tau = 2*pi*sqrt(m/k).
@@ -25,7 +25,6 @@ declare -A DT_BY_K=(
   [100]="0.001"
   [1000]="0.001"
   [10000]="0.0005"
-  [100000]="0.0001"
 )
 
 for K in "${K_VALUES[@]}"; do
