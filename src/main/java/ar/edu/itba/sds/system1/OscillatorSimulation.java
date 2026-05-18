@@ -7,7 +7,7 @@ import java.util.*;
  * System 1: Damped Harmonic Oscillator
  * Compares Euler, Verlet original, Beeman, and Gear PC order-5 integrators.
  *
- * Parameters (from Teorica_4 slide 36):
+ * Parameters:
  * m=70 kg, k=1e4 N/m, gamma=100 kg/s, tf=5 s
  * r(0)=1 m, v(0)=-A*gamma/(2m) m/s with A=1
  * Force: f = -k*r - gamma*v
@@ -22,7 +22,7 @@ public class OscillatorSimulation {
     static final double R0 = 1.0;
     static final double V0 = -GAMMA / (2.0 * M); // = -5/7 m/s
 
-    // Gear PC order-5 corrector coefficients for f(r, v) (velocity-dependent)
+    // Gear PC order-5 corrector coefficients
     static final double[] GEAR_ALPHA = { 3.0 / 16, 251.0 / 360, 1.0, 11.0 / 18, 1.0 / 6, 1.0 / 60 };
 
     // ── Force & analytical ──────────────────────────────────────────────────
@@ -110,8 +110,7 @@ public class OscillatorSimulation {
     // ── Gear Predictor-Corrector order 5 ────────────────────────────────────
     // Stores scaled derivatives: c[q] = r^(q)(t) * dt^q / q!
     // Predictor: Pascal-triangle expansion.
-    // Corrector: c[q] += alpha[q] * deltaR2, where deltaR2 = a_actual*dt^2/2 -
-    // c[2].
+    // Corrector: c[q] += alpha[q] * deltaR2, where deltaR2 = a_actual*dt^2/2 - c[2].
 
     static double[] runGearPC(double dt) {
         int steps = (int) Math.round(TF / dt);

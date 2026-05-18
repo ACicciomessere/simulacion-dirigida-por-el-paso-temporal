@@ -4,7 +4,7 @@ public class Particle {
     public final int id;
     public double x, y;
     public double vx, vy;
-    public double ax, ay;       // current acceleration (used by velocity-Verlet)
+    public double ax, ay;      
     public final double radius;
     public final double mass;
     public boolean isUsed;      // false = fresh (green), true = used (red)

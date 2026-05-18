@@ -57,10 +57,9 @@ public class System2Main {
         new File(outBase).mkdirs();
 
         if (Nlist != null) {
-            // ── Timing sweep (task 1.1) ──────────────────────────────────────
+            // ── Timing sweep 1.1 ──────────────────────────────────────
             runTimingSweep(Nlist, dt, dt2, tf, k, seeds[0], outBase);
         } else {
-            // ── Single N, multiple realizations ─────────────────────────────
             runRealizations(N, dt, dt2, tf, k, seeds, outBase);
         }
     }

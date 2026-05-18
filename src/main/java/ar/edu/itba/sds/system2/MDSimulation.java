@@ -41,7 +41,7 @@ public class MDSimulation {
     // Contact tracking (to detect first dt of each obstacle-contact episode)
     private final boolean[] wasInContactObs;
 
-    // Cfc vector: stored at max resolution (every dt)
+    // Cfc vector: stored at max resolution
     private final List<double[]> cfcSeries;  // [time, cfc]
     private int cfc;
 
@@ -147,7 +147,7 @@ public class MDSimulation {
                 List<Integer> cell1 = cells[cy * M_CELLS + cx];
                 if (cell1.isEmpty()) continue;
 
-                // Iterate over the 3×3 neighbourhood (no periodic wrap)
+                // Iterate over the 3×3 neighbourhood
                 for (int dy = -1; dy <= 1; dy++) {
                     for (int dx = -1; dx <= 1; dx++) {
                         int nx = cx + dx;
@@ -161,7 +161,6 @@ public class MDSimulation {
                         for (int ii : cell1) {
                             Particle pi = particles.get(ii);
                             for (int jj : cell2) {
-                                // Process each unordered pair exactly once
                                 if (ii >= jj) continue;
                                 Particle pj = particles.get(jj);
                                 double ddx  = pi.x - pj.x;
@@ -180,12 +179,12 @@ public class MDSimulation {
             }
         }
 
-        // ── Boundary forces (unchanged) ─────────────────────────────────────
+        // ── Boundary forces ─────────────────────────────────────
         for (int i = 0; i < n; i++) {
             Particle pi = particles.get(i);
             double dist = pi.distFromOrigin();
 
-            // Fixed obstacle at origin (repulsive, pushes particle outward)
+            // Fixed obstacle at origin (pushes particle outward)
             double xiObs = R_OBSTACLE + pi.radius - dist;
             if (xiObs > 0 && dist > 1e-12) {
                 double fn = k * xiObs / dist;
@@ -193,7 +192,7 @@ public class MDSimulation {
                 fy[i] += fn * pi.y;
             }
 
-            // Outer wall (repulsive, pushes particle inward)
+            // Outer wall (pushes particle inward)
             double xiWall = pi.radius + dist - R_DOMAIN;
             if (xiWall > 0 && dist > 1e-12) {
                 double fn = k * xiWall / dist;
