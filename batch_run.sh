@@ -16,7 +16,7 @@ mkdir -p "$TARGET_DIR"
 echo "=== Iniciando tanda de simulación: $TARGET_DIR (Seeds: $SEEDS) ==="
 
 K_VALUES=(100 1000 10000)
-N_LIST="100,200,300,500,600,800,1000"
+N_LIST="450,500,525,550,575,600,650"
 
 # dt adaptativo: el período de oscilación elástica es tau = 2*pi*sqrt(m/k).
 # Pedimos >= 50 pasos por período => dt = tau/50.

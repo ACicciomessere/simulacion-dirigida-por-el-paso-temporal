@@ -392,16 +392,6 @@ def plot_radial_profiles(base_dir, N_list, k_str, out_dir, seed=42):
     return jin_near_obs
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# FUNCIONES DE ESCALADO 
-# ═══════════════════════════════════════════════════════════════════════════════
-
-def get_characteristic_value(df_j):
-    idx_max = df_j["J_mean"].idxmax()
-    n_star = df_j["N"].iloc[idx_max]
-    return n_star 
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # TAREA 1.4: COMPARACIÓN DE K
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -412,7 +402,7 @@ def run_task_1_4_analysis(base_dir, k_list, N_list, out_dir):
     max_k = max(k_list)
     max_n = max(N_list)
     target_max_key = f"n{max_n}_k{int(max_k)}"
-    
+
     # Si esa clave existe en nuestro diccionario, significa que hay carpetas para graficar la energía
     if target_max_key in config_groups:
         # Le pasamos la primera ruta de states.txt que encontremos para esa configuración
@@ -443,8 +433,9 @@ def run_task_1_4_analysis(base_dir, k_list, N_list, out_dir):
         df = pd.read_csv(csv_path)
 
         # --- PANEL 0: <J>(N) por k ---
+        exp = int(np.log10(k_val))
         ax[0].errorbar(df["N"], df["J_mean"], yerr=df["J_std"],
-                       fmt="o-", color=colors[i], capsize=4, label=f"k={k_str}")
+                       fmt="o-", color=colors[i], capsize=4, label=f"$k=10^{{{exp}}}$")
         idx_max_J = df["J_mean"].idxmax()
         max_J.append(df["J_mean"].iloc[idx_max_J])
         max_J_err.append(df["J_std"].iloc[idx_max_J])
@@ -471,8 +462,8 @@ def run_task_1_4_analysis(base_dir, k_list, N_list, out_dir):
         jin_n_means = np.array(jin_n_means)
         jin_n_stds  = np.array(jin_n_stds)
 
-        ax[1].errorbar(N_list, jin_n_means, yerr=jin_n_stds, fmt="s--",
-                       color=colors[i], capsize=4, label=f"k={k_str}")
+        ax[1].errorbar(N_list, jin_n_means, yerr=jin_n_stds, fmt="o-",
+                       color=colors[i], capsize=4, label=f"$k=10^{{{exp}}}$")
 
         if np.isfinite(jin_n_means).any():
             idx_max_Jin = int(np.nanargmax(jin_n_means))
@@ -484,7 +475,7 @@ def run_task_1_4_analysis(base_dir, k_list, N_list, out_dir):
 
     ax[0].set_title("Scanning Rate $\\langle J \\rangle$ vs N")
     ax[0].set_ylabel("$\\langle J \\rangle$ [1/s]")
-    ax[1].set_title(f"Flujo Radial $\\langle J_{{in}} \\rangle$ vs N  (S∈[{S_BAND_LO},{S_BAND_HI}] m)")
+    ax[1].set_title(f"Flujo Radial $\\langle J_{{in}} \\rangle$ vs N")
     ax[1].set_ylabel("$\\langle J_{in} \\rangle$  [m$^{-2}$ s$^{-1}$]")
     for a in ax:
         a.set_xlabel("N")

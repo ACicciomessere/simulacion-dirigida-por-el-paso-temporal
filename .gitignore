@@ -3,3 +3,5 @@
 *.mp4
 /.venv
 /.vscode
+/old_run
+/correct_run
